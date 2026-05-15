@@ -1,5 +1,11 @@
 from .ssies import SSIES
 from .schemas import HEADER_SCHEMA, DM_SCHEMA
+import xarray as xr
+import datetime as dt
+import numpy as np
+import pandas as pd
+import cdflib
+from cdflib.epochs import CDFepoch
 
 class DM(SSIES):
 
@@ -28,7 +34,7 @@ class DM(SSIES):
         if not (0 <= header["hour"] <= 24):
             return False
 
-        if not (0 <= header["minute"] <= 59):
+        if not (0 <= header["minute_of_hour"] <= 59):
             return False
 
         if not (1 <= seconds_in_minute <= 60):
@@ -99,3 +105,240 @@ class DM(SSIES):
                         break
 
         return records
+
+    def _build_minute_time(self, header):
+        return dt.datetime(
+            int(header["year"]),
+            1,
+            1,
+            int(header["hour"]),
+            int(header["minute_of_hour"]),
+        ) + dt.timedelta(days=int(header["day_of_year"]) - 1)
+
+    def _build_time(self, header, second_of_minute):
+        return self._build_minute_time(header) + dt.timedelta(
+            seconds=int(second_of_minute)
+        )
+
+    def _schema_meta_map(self):
+        meta = {}
+        for field in HEADER_SCHEMA + DM_SCHEMA:
+            meta[field["name"]] = field
+        return meta
+
+    def _apply_schema_attrs(self, ds, schema):
+        for field in schema:
+            name = field["name"]
+            if name in ds:
+                if field.get("units") is not None:
+                    ds[name].attrs["units"] = field["units"]
+                if field.get("long_name") is not None:
+                    ds[name].attrs["long_name"] = field["long_name"]
+        return ds
+
+    def to_xarray(self, records):
+        if not records:
+            return xr.Dataset()
+
+        attr_fields = {"spacecraft_id", "data_file_id"}
+
+        minute_schema = [
+            f for f in HEADER_SCHEMA
+            if f["name"] not in attr_fields
+        ]
+        minute_names = [f["name"] for f in minute_schema]
+        second_names = [f["name"] for f in DM_SCHEMA]
+
+        minute_times = []
+        minute_index_per_second = []
+        second_times = []
+
+        minute_values = {n: [] for n in minute_names}
+        second_values = {n: [] for n in second_names}
+        for m_idx, minute_record in enumerate(records):
+            header = minute_record["header"]
+
+            minute_time = self._build_minute_time(header)
+            minute_times.append(minute_time)
+
+            for n in minute_names:
+                minute_values[n].append(header[n])
+
+            for second_record in minute_record["data"]:
+                minute_index_per_second.append(m_idx)
+
+                second_times.append(
+                    self._build_time(
+                        header,
+                        second_record["second_of_minute"],
+                    )
+                )
+
+                for n in second_names:
+                    second_values[n].append(second_record[n])
+
+        ds = xr.Dataset(
+            coords={
+                "minute": ("minute", np.arange(len(records), dtype=np.int64)),
+                "minute_time": ("minute", minute_times),
+
+                "second": ("second", second_times),
+
+                "minute_index": ("second", minute_index_per_second),
+            }
+        )
+
+        # minute variables
+        for n in minute_names:
+            ds[n] = ("minute", minute_values[n])
+
+        # second variables
+        for n in second_names:
+            ds[n] = ("second", second_values[n])
+
+        first_header = records[0]["header"]
+
+        ds.attrs["source_file"] = str(self.filepath)
+        ds.attrs["spacecraft_id"] = first_header.get("spacecraft_id")
+        ds.attrs["data_file_id"] = first_header.get("data_file_id")
+        ds.attrs["minute_count"] = len(records)
+        ds.attrs["record_count"] = len(second_times)
+
+        self._apply_schema_attrs(ds, minute_schema)
+        self._apply_schema_attrs(ds, DM_SCHEMA)
+
+        ds["minute_time"].attrs["long_name"] = "Date and time for the minute"
+        ds["second"].attrs["long_name"] = "Coordinate for seconds"
+        ds["minute_index"].attrs["long_name"] = "Link between minute and second"
+        ds["minute"].attrs["long_name"] = "Coordinate for seconds minute"
+
+        return ds
+
+    def export_netcdf(self, ds, path):
+        ds.to_netcdf(path, format="NETCDF4")
+
+    def _to_flat_dataframe(self, ds):
+        second_vars = [
+            name for name in ds.data_vars
+            if "second" in ds[name].dims
+        ]
+
+        second_df = pd.DataFrame({
+            name: ds[name].values
+            for name in second_vars
+        })
+
+        second_df["minute_index"] = ds["minute_index"].values
+
+        minute_vars = [
+            name for name in ds.data_vars
+            if "minute" in ds[name].dims
+        ]
+
+        minute_df = pd.DataFrame({
+            name: ds[name].values
+            for name in minute_vars
+        })
+
+        minute_df["minute_index"] = np.arange(ds.sizes["minute"], dtype=np.int64)
+
+        flat = minute_df.merge(
+            second_df,
+            on="minute_index",
+            how="left",
+        )
+
+        flat = flat.drop(columns=["minute_index"])
+
+        spacecraft_id = ds.attrs.get("spacecraft_id")
+        data_file_id = ds.attrs.get("data_file_id")
+        flat.insert(0, "data_file_id", data_file_id)
+        flat.insert(0, "spacecraft_id", spacecraft_id)
+
+        return flat
+
+    def export_csv(self, ds, path):
+        flat = self._to_flat_dataframe(ds)
+        flat.to_csv(path, index=False)
+
+    def _numpy_to_cdf_dtype(self, arr):
+        kind = arr.dtype.kind
+
+        if kind == "i":
+            if arr.dtype.itemsize <= 2:
+                return 2  # cdf_int2
+            if arr.dtype.itemsize <= 4:
+                return 4  # cdf_int4
+            return 8  # cdf_int8
+
+        if kind == "u":
+            if arr.dtype.itemsize <= 1:
+                return 11  # cdf_uint1
+            if arr.dtype.itemsize <= 2:
+                return 12  # cdf_uint2
+            return 14  # cdf_uint4
+
+        if kind == "f":
+            if arr.dtype.itemsize <= 4:
+                return 21  # cdf_float
+            return 22  # cdf_double
+
+        if kind in ("U", "S", "O"):
+            return 51  # cdf_char
+
+        if kind == "M":
+            return 33  # cdf_time_tt2000
+
+        raise TypeError(f"Unsupported dtype for CDF: {arr.dtype}")
+
+    def _datetime64_to_tt2000(self, values):
+        values = np.asarray(values)
+
+        # гарантируем datetime64[ns]
+        values = values.astype("datetime64[ns]")
+
+        return CDFepoch.compute_tt2000(values)
+
+    def export_cdf(self, ds, path):
+        cdf = cdflib.cdfwrite.CDF(path, delete=True)
+
+        # global attrs
+        global_attrs = {}
+        for k, v in ds.attrs.items():
+            global_attrs[k] = {0: str(v)}
+        cdf.write_globalattrs(global_attrs)
+
+        # variables
+        for name in ds.variables:
+            var = ds[name]
+            arr = var.values
+
+            # координаты времени в CDF лучше хранить как TT2000
+            if np.issubdtype(arr.dtype, np.datetime64):
+                arr = self._datetime64_to_tt2000(arr)
+
+            arr = np.asarray(arr)
+
+            if arr.ndim == 1:
+                dim_sizes = []
+            else:
+                dim_sizes = list(arr.shape[1:])
+
+            dtype = self._numpy_to_cdf_dtype(arr)
+
+            var_spec = {
+                "Variable": name,
+                "Data_Type": dtype,
+                "Num_Elements": 1,
+                "Rec_Vary": True,
+                "Dim_Sizes": dim_sizes,
+                "Var_Type": "zVariable",
+            }
+
+            var_attrs = {}
+            for ak, av in var.attrs.items():
+                var_attrs[ak] = av
+
+            cdf.write_var(var_spec, var_attrs=var_attrs, var_data=arr)
+
+        cdf.close()

@@ -15,14 +15,7 @@ class SSIES:
 
     def _open_file(self):
 
-        if self.filepath.suffix.lower() == ".gz":
-
-            return gzip.open(
-                self.filepath,
-                "rb"
-            )
-
-        return open(
+        return gzip.open(
             self.filepath,
             "rb"
         )
