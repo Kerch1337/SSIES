@@ -1,17 +1,18 @@
 from .ssies import SSIES
-from .schemas import HEADER_SCHEMA, DM_SCHEMA
+from .schemas import HEADER_SCHEMA, SM_SCHEMA
 import xarray as xr
 import numpy as np
 import pandas as pd
 
-class DM(SSIES):
+
+class SM(SSIES):
 
     def _is_valid_header(self, header):
         spacecraft_id = header["spacecraft_id"]
         data_file_id = header["data_file_id"]
         seconds_in_minute = header["seconds_in_minute"]
 
-        if data_file_id != "DM":
+        if data_file_id != "SM":
             return False
 
         if not spacecraft_id.startswith("F"):
@@ -23,6 +24,9 @@ class DM(SSIES):
             return False
 
         if not (8 <= flight_number <= 15):
+            return False
+
+        if not (1987 <= header["year"] <= 2049):
             return False
 
         if not (0 <= header["day_of_year"] <= 366):
@@ -39,14 +43,13 @@ class DM(SSIES):
 
         return True
 
-
     def parse_file(self):
         records = []
 
         with self._open_file() as file:
             while True:
                 try:
-                    minute_record = self._parse_minute_record(file, HEADER_SCHEMA, DM_SCHEMA, "seconds_in_minute")
+                    minute_record = self._parse_minute_record(file, HEADER_SCHEMA, SM_SCHEMA,"seconds_in_minute")
                     records.append(minute_record)
 
                 except EOFError:
@@ -68,8 +71,9 @@ class DM(SSIES):
             f for f in HEADER_SCHEMA
             if f["name"] not in attr_fields
         ]
+
         minute_names = [f["name"] for f in minute_schema]
-        second_names = [f["name"] for f in DM_SCHEMA]
+        second_names = [f["name"] for f in SM_SCHEMA]
 
         minute_times = []
         minute_index_per_second = []
@@ -77,6 +81,7 @@ class DM(SSIES):
 
         minute_values = {n: [] for n in minute_names}
         second_values = {n: [] for n in second_names}
+
         for m_idx, minute_record in enumerate(records):
             header = minute_record["header"]
 
@@ -103,9 +108,7 @@ class DM(SSIES):
             coords={
                 "minute": ("minute", np.arange(len(records), dtype=np.int64)),
                 "minute_time": ("minute", minute_times),
-
                 "second": ("second", second_times),
-
                 "minute_index": ("second", minute_index_per_second),
             }
         )
@@ -125,12 +128,12 @@ class DM(SSIES):
         ds.attrs["record_count"] = len(second_times)
 
         self._apply_schema_attrs(ds, minute_schema)
-        self._apply_schema_attrs(ds, DM_SCHEMA)
+        self._apply_schema_attrs(ds, SM_SCHEMA)
 
         ds["minute_time"].attrs["long_name"] = "Date and time for the minute"
         ds["second"].attrs["long_name"] = "Coordinate for seconds"
         ds["minute_index"].attrs["long_name"] = "Link between minute and second"
-        ds["minute"].attrs["long_name"] = "Coordinate for seconds minute"
+        ds["minute"].attrs["long_name"] = "Coordinate for minutes"
 
         return ds
 
@@ -157,7 +160,10 @@ class DM(SSIES):
             for name in minute_vars
         })
 
-        minute_df["minute_index"] = np.arange(ds.sizes["minute"], dtype=np.int64)
+        minute_df["minute_index"] = np.arange(
+            ds.sizes["minute"],
+            dtype=np.int64
+        )
 
         flat = minute_df.merge(
             second_df,
@@ -169,6 +175,7 @@ class DM(SSIES):
 
         spacecraft_id = ds.attrs.get("spacecraft_id")
         data_file_id = ds.attrs.get("data_file_id")
+
         flat.insert(0, "data_file_id", data_file_id)
         flat.insert(0, "spacecraft_id", spacecraft_id)
 

@@ -1,7 +1,6 @@
 from .ssies import SSIES
 from .schemas import HEADER_SCHEMA_2, MP_SCHEMA
 import xarray as xr
-import datetime as dt
 import numpy as np
 import pandas as pd
 
@@ -114,11 +113,9 @@ class MP(SSIES):
             }
         )
 
-        # minute variables
         for n in minute_names:
             ds[n] = ("minute", minute_values[n])
 
-        # set variables
         for n in set_names:
             ds[n] = ("set", set_values[n])
 
