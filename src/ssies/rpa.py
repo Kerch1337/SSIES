@@ -1,5 +1,5 @@
 from .ssies import SSIES
-from .schemas import HEADER_SCHEMA_2, RPA_SCHEMA
+from ssies.schemes import HEADER_SCHEMA_2, RPA_SCHEMA
 import xarray as xr
 import numpy as np
 import pandas as pd

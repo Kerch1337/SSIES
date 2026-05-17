@@ -1,5 +1,5 @@
 from .ssies import SSIES
-from .schemas import HEADER_SCHEMA_2, EP_OUTPUT_TYPE_SCHEMA, EP_BS_SCHEMA, EP_D_SCHEMA
+from ssies.schemes import HEADER_SCHEMA_2, EP_OUTPUT_TYPE_SCHEMA, EP_BS_SCHEMA, EP_D_SCHEMA
 import xarray as xr
 import numpy as np
 import pandas as pd
