@@ -24,7 +24,7 @@ class SSIES:
         if len(data) != size:
 
             raise EOFError(
-                f"Expected {size} bytes, got {len(data)}."
+                f"Expected {size} bytes, but got {len(data)}."
             )
 
         return data

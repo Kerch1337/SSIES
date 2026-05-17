@@ -64,9 +64,11 @@ class RPA(SSIES):
                     if not self._resync_to_next_header(file, HEADER_SCHEMA_2):
                         break
 
-        return records
+        ds = self._to_xarray(records)
 
-    def to_xarray(self, records):
+        return ds
+
+    def _to_xarray(self, records):
         if not records:
             return xr.Dataset()
 
