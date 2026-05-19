@@ -117,7 +117,10 @@ class SSIES:
                 )
 
             if transform is not None and not (isinstance(value, float) and math.isnan(value)):
-                value = transform(value)
+                try:
+                    value = transform(value)
+                except Exception:
+                    value = math.nan
 
             result[name] = value
 
