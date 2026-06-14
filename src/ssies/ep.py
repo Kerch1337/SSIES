@@ -60,7 +60,7 @@ class EP(SSIES):
 
         file.seek(start)
 
-        if output_type in {"B", "S"}:
+        if output_type in {"B", "S", "O"}:
             record = self._parse_schema(file, EP_BS_SCHEMA)
             record["output_type"] = output_type
             return record
@@ -85,7 +85,7 @@ class EP(SSIES):
 
         for output_type in output_types:
 
-            if output_type not in {"B", "S", "D"}:
+            if output_type not in {"B", "S", "D", "O"}:
                 continue
 
             set_record = self._parse_set_record(file,output_type)
@@ -151,7 +151,7 @@ class EP(SSIES):
             for set_record in minute_record["data"]:
                 output_type = set_record["output_type"]
 
-                if output_type in {"B", "S"}:
+                if output_type in {"B", "S", "O"}:
                     minute_index_per_bs.append(m_idx)
                     bs_times.append(self._build_time(header, set_record["bs_second_of_minute"]))
                     bs_output_types.append(output_type)
