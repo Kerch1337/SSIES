@@ -3,11 +3,13 @@ from ssies.schemes import HEADER_SCHEMA_2, EP_OUTPUT_TYPE_SCHEMA, EP_BS_SCHEMA, 
 import xarray as xr
 import numpy as np
 import pandas as pd
+from pathlib import Path
+import gzip
 
 
 class EP(SSIES):
 
-    def _is_valid_header(self, header):
+    def _is_valid_header(self, header: dict) -> bool:
         spacecraft_id = header["spacecraft_id"]
         data_file_id = header["data_file_id"]
         number_set = header["number_set"]
@@ -40,7 +42,7 @@ class EP(SSIES):
 
         return True
 
-    def _parse_output_types(self, file):
+    def _parse_output_types(self, file: gzip.GzipFile) -> list:
         output_types = []
 
         for i in range(30):
@@ -52,7 +54,7 @@ class EP(SSIES):
 
         return output_types
 
-    def _parse_set_record(self, file, output_type):
+    def _parse_set_record(self, file: gzip.GzipFile, output_type: str) -> dict | None:
 
         start = file.tell()
 
@@ -68,7 +70,7 @@ class EP(SSIES):
             record["output_type"] = output_type
             return record
 
-    def _parse_minute_record(self, file, header_scheme, set_scheme, field_name):
+    def _parse_minute_record(self, file: gzip.GzipFile, header_scheme: list[dict], set_scheme: list[dict], field_name: str) -> dict:
         start_offset = file.tell()
 
         header = self._parse_schema(file, header_scheme)
@@ -95,7 +97,7 @@ class EP(SSIES):
             "data": data,
         }
 
-    def parse_file(self):
+    def parse_file(self) -> xr.Dataset:
 
         records = []
 
@@ -116,7 +118,7 @@ class EP(SSIES):
 
         return ds
 
-    def _to_xarray(self, records):
+    def _to_xarray(self, records: list[dict]) -> xr.Dataset:
         if not records:
             return xr.Dataset()
 
@@ -213,7 +215,7 @@ class EP(SSIES):
 
         return ds
 
-    def _to_flat_dataframe(self, ds):
+    def _to_flat_dataframe(self, ds: xr.Dataset) -> pd.DataFrame:
         minute_vars = [name for name in ds.data_vars if "minute" in ds[name].dims]
         minute_df = pd.DataFrame({name: ds[name].values for name in minute_vars})
         minute_df["minute_index"] = np.arange(ds.sizes["minute"], dtype=np.int64)
@@ -244,6 +246,6 @@ class EP(SSIES):
 
         return flat
 
-    def export_csv(self, ds, path):
+    def export_csv(self, ds: xr.Dataset, path: str | Path) -> None:
         flat = self._to_flat_dataframe(ds)
         flat.to_csv(path, index=False)

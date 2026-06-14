@@ -2,22 +2,23 @@ from pathlib import Path
 import gzip
 import math
 import datetime as dt
+import xarray as xr
 
 
 class SSIES:
 
-    def __init__(self, filepath):
+    def __init__(self, filepath: str | Path) -> None:
 
         self.filepath = Path(filepath)
 
-    def _open_file(self):
+    def _open_file(self) -> gzip.GzipFile:
 
         return gzip.open(
             self.filepath,
             "rb"
         )
 
-    def _read_exact(self, file, size):
+    def _read_exact(self, file: gzip.GzipFile, size: int) -> bytes:
 
         data = file.read(size)
 
@@ -29,14 +30,14 @@ class SSIES:
 
         return data
 
-    def _all_bytes_equal(self, data, value):
+    def _all_bytes_equal(self, data: bytes, value: int) -> bool:
 
         return all(
             byte == value
             for byte in data
         )
 
-    def _read_uint(self, file, size):
+    def _read_uint(self, file: gzip.GzipFile, size: int) -> int | float:
 
         raw = self._read_exact(
             file,
@@ -55,7 +56,7 @@ class SSIES:
 
         return value
 
-    def _read_ascii(self, file, size):
+    def _read_ascii(self, file: gzip.GzipFile, size: int) -> str:
 
         raw = self._read_exact(
             file,
@@ -66,14 +67,14 @@ class SSIES:
             "ascii"
         ).rstrip()
 
-    def _read_bytes(self, file, size):
+    def _read_bytes(self, file: gzip.GzipFile, size: int) -> bytes:
 
         return self._read_exact(
             file,
             size
         )
 
-    def _parse_schema(self, file, schema):
+    def _parse_schema(self, file: gzip.GzipFile, schema: list[dict]) -> dict:
 
         result = {}
 
@@ -126,7 +127,7 @@ class SSIES:
 
         return result
 
-    def _resync_to_next_header(self, file, header_scheme):
+    def _resync_to_next_header(self, file: gzip.GzipFile, header_scheme: list[dict]) -> bool:
         max_search = 5000
 
         while max_search > 0:
@@ -151,10 +152,10 @@ class SSIES:
 
         return False
 
-    def _is_valid_header(self, header_scheme):
+    def _is_valid_header(self, header: dict) -> bool:
         return False
 
-    def _parse_minute_record(self, file, header_scheme, set_scheme, field_name):
+    def _parse_minute_record(self, file: gzip.GzipFile, header_scheme: list[dict], set_scheme: list[dict], field_name: str) -> dict:
 
         start_offset = file.tell()
 
@@ -183,7 +184,7 @@ class SSIES:
             "data": data,
         }
 
-    def _build_minute_time(self, header):
+    def _build_minute_time(self, header: dict) -> dt.datetime:
         return dt.datetime(
             int(header["year"]),
             1,
@@ -192,15 +193,15 @@ class SSIES:
             int(header["minute_of_hour"]),
         ) + dt.timedelta(days=int(header["day_of_year"]) - 1)
 
-    def _build_time(self, header, second_of_minute):
+    def _build_time(self, header: dict, second_of_minute: int | float) -> dt.datetime:
         return self._build_minute_time(header) + dt.timedelta(
             seconds=int(second_of_minute)
         )
 
-    def export_netcdf(self, ds, path):
+    def export_netcdf(self, ds: xr.Dataset, path: str | Path) -> None:
         ds.to_netcdf(path, format="NETCDF4")
 
-    def _apply_schema_attrs(self, ds, schema):
+    def _apply_schema_attrs(self, ds: xr.Dataset, schema: list[dict]) -> xr.Dataset:
         for field in schema:
             name = field["name"]
 

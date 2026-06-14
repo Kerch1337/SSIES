@@ -3,11 +3,12 @@ from ssies.schemes import HEADER_SCHEMA, SM_SCHEMA
 import xarray as xr
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 
 class SM(SSIES):
 
-    def _is_valid_header(self, header):
+    def _is_valid_header(self, header: dict) -> bool:
         spacecraft_id = header["spacecraft_id"]
         data_file_id = header["data_file_id"]
         seconds_in_minute = header["seconds_in_minute"]
@@ -43,7 +44,7 @@ class SM(SSIES):
 
         return True
 
-    def parse_file(self):
+    def parse_file(self) -> xr.Dataset:
         records = []
 
         with self._open_file() as file:
@@ -63,7 +64,7 @@ class SM(SSIES):
 
         return ds
 
-    def _to_xarray(self, records):
+    def _to_xarray(self, records: list[dict]) -> xr.Dataset:
         if not records:
             return xr.Dataset()
 
@@ -139,7 +140,7 @@ class SM(SSIES):
 
         return ds
 
-    def _to_flat_dataframe(self, ds):
+    def _to_flat_dataframe(self, ds: xr.Dataset) -> pd.DataFrame:
         second_vars = [
             name for name in ds.data_vars
             if "second" in ds[name].dims
@@ -183,6 +184,6 @@ class SM(SSIES):
 
         return flat
 
-    def export_csv(self, ds, path):
+    def export_csv(self, ds: xr.Dataset, path: str | Path) -> None:
         flat = self._to_flat_dataframe(ds)
         flat.to_csv(path, index=False)
