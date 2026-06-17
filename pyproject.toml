@@ -1,7 +1,7 @@
 [project]
 name = "ssies"
-version = "0.1.2"
-description = "Library for parcing data SSIES detector DMSP mission"
+version = "0.1.4"
+description = "Library for parsing data SSIES detector DMSP project"
 readme = "README.md"
 authors = [{name="Kirill"}]
 requires-python = ">=3.8"
